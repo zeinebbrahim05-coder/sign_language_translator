@@ -30,7 +30,7 @@ This project aims to bridge the communication gap between sign language users an
 ## 📁 Project Structure
 sign_language_translator/
 ├── utils/
-│ └── hand_tracking.py
+│   └── hand_tracking.py
 ├── data/
 ├── .gitignore
 ├── main.py

@@ -21,6 +21,7 @@ class HandDetector:
         )
 
     def run(self):
+        tip_ids = [4, 8, 12, 16, 20]
 
         while True:
 
@@ -33,6 +34,10 @@ class HandDetector:
                 result = self.hand.process(rgb_frame)
 
                 if result.multi_hand_landmarks:
+                    if result.multi_handedness:
+                        label = result.multi_handedness[0].classification[0].label
+                    else:
+                        label = "Unknown"
 
                     for hand_landmarks in result.multi_hand_landmarks:
 
@@ -48,8 +53,6 @@ class HandDetector:
 
                             cx, cy = int(lm.x * w), int(lm.y * h)
 
-                            print(id, cx, cy)
-
                             cv2.circle(
                                 frame,
                                 (cx, cy),
@@ -57,6 +60,37 @@ class HandDetector:
                                 (255, 0, 0),
                                 cv2.FILLED
                             )
+                        fingers = []
+
+                        # Thumb
+                        if label == "Right":
+                            thumb = hand_landmarks.landmark[4].x < hand_landmarks.landmark[3].x
+                        else:
+                            thumb = hand_landmarks.landmark[4].x > hand_landmarks.landmark[3].x
+
+                        fingers.append(1 if thumb else 0)
+
+                        # Other fingers
+                        for tip in tip_ids[1:]:
+
+                            if hand_landmarks.landmark[tip].y < hand_landmarks.landmark[tip - 2].y:
+                                fingers.append(1)
+
+                            else:
+                                fingers.append(0)
+
+                        print("Fingers:", fingers.count(1))
+                        cv2.putText(
+                            frame,
+                            str(fingers.count(1)),
+                            (50, 100),
+                            cv2.FONT_HERSHEY_SIMPLEX,
+                            3,
+                            (0, 0, 255),
+                            5
+                        )
+                        if hand_landmarks.landmark[8].y < hand_landmarks.landmark[6].y:
+                            print("Index Finger Open")
 
                 cv2.imshow("Hand Tracking", frame)
 

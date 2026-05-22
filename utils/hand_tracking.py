@@ -1,18 +1,23 @@
 import cv2
 import mediapipe as mp
 
+from utils.gesture_recognition import detect_gesture
+
+
 class HandDetector:
 
     def __init__(self):
 
+        # MediaPipe
         self.mp_hands = mp.solutions.hands
         self.mp_draw = mp.solutions.drawing_utils
 
+        # Camera
         self.cap = cv2.VideoCapture(0)
-
         self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 600)
         self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 500)
 
+        # Hand detector
         self.hand = self.mp_hands.Hands(
             static_image_mode=False,
             max_num_hands=1,
@@ -20,82 +25,112 @@ class HandDetector:
             min_tracking_confidence=0.7
         )
 
+        # Fingertips ids
+        self.tip_ids = [4, 8, 12, 16, 20]
+
+    def get_fingers_state(self, hand_landmarks, label):
+
+        fingers = []
+
+        # Thumb
+        if label == "Right":
+            thumb_open = (
+                hand_landmarks.landmark[4].x
+                < hand_landmarks.landmark[3].x
+            )
+        else:
+            thumb_open = (
+                hand_landmarks.landmark[4].x
+                > hand_landmarks.landmark[3].x
+            )
+
+        fingers.append(1 if thumb_open else 0)
+
+        # Other fingers
+        for tip in self.tip_ids[1:]:
+
+            finger_open = (
+                hand_landmarks.landmark[tip].y
+                < hand_landmarks.landmark[tip - 2].y
+            )
+
+            fingers.append(1 if finger_open else 0)
+
+        return fingers
+
+    def draw_landmarks(self, frame, hand_landmarks):
+
+        self.mp_draw.draw_landmarks(
+            frame,
+            hand_landmarks,
+            self.mp_hands.HAND_CONNECTIONS
+        )
+
+        h, w, c = frame.shape
+
+        for lm in hand_landmarks.landmark:
+
+            cx = int(lm.x * w)
+            cy = int(lm.y * h)
+
+            cv2.circle(
+                frame,
+                (cx, cy),
+                5,
+                (255, 0, 0),
+                cv2.FILLED
+            )
+
     def run(self):
-        tip_ids = [4, 8, 12, 16, 20]
 
         while True:
 
             success, frame = self.cap.read()
 
-            if success:
+            if not success:
+                break
 
-                rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
-                result = self.hand.process(rgb_frame)
+            result = self.hand.process(rgb_frame)
 
-                if result.multi_hand_landmarks:
-                    if result.multi_handedness:
-                        label = result.multi_handedness[0].classification[0].label
-                    else:
-                        label = "Unknown"
+            if result.multi_hand_landmarks:
 
-                    for hand_landmarks in result.multi_hand_landmarks:
+                # Right / Left hand
+                if result.multi_handedness:
+                    label = result.multi_handedness[0].classification[0].label
+                else:
+                    label = "Unknown"
 
-                        self.mp_draw.draw_landmarks(
-                            frame,
-                            hand_landmarks,
-                            self.mp_hands.HAND_CONNECTIONS
-                        )
+                for hand_landmarks in result.multi_hand_landmarks:
 
-                        for id, lm in enumerate(hand_landmarks.landmark):
+                    # Draw hand
+                    self.draw_landmarks(frame, hand_landmarks)
 
-                            h, w, c = frame.shape
+                    # Detect fingers
+                    fingers = self.get_fingers_state(
+                        hand_landmarks,
+                        label
+                    )
 
-                            cx, cy = int(lm.x * w), int(lm.y * h)
+                    # Detect gesture
+                    gesture = detect_gesture(fingers)
 
-                            cv2.circle(
-                                frame,
-                                (cx, cy),
-                                5,
-                                (255, 0, 0),
-                                cv2.FILLED
-                            )
-                        fingers = []
+                    # Display gesture
+                    cv2.putText(
+                        frame,
+                        gesture,
+                        (50, 100),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        3,
+                        (0, 0, 255),
+                        5
+                    )
 
-                        # Thumb
-                        if label == "Right":
-                            thumb = hand_landmarks.landmark[4].x < hand_landmarks.landmark[3].x
-                        else:
-                            thumb = hand_landmarks.landmark[4].x > hand_landmarks.landmark[3].x
+            cv2.imshow("Hand Tracking", frame)
 
-                        fingers.append(1 if thumb else 0)
-
-                        # Other fingers
-                        for tip in tip_ids[1:]:
-
-                            if hand_landmarks.landmark[tip].y < hand_landmarks.landmark[tip - 2].y:
-                                fingers.append(1)
-
-                            else:
-                                fingers.append(0)
-
-                        print("Fingers:", fingers.count(1))
-                        cv2.putText(
-                            frame,
-                            str(fingers.count(1)),
-                            (50, 100),
-                            cv2.FONT_HERSHEY_SIMPLEX,
-                            3,
-                            (0, 0, 255),
-                            5
-                        )
-                        if hand_landmarks.landmark[8].y < hand_landmarks.landmark[6].y:
-                            print("Index Finger Open")
-
-                cv2.imshow("Hand Tracking", frame)
-
-                if cv2.waitKey(1) == ord('q'):
-                    break
+            if cv2.waitKey(1) == ord('q'):
+                break
 
         self.cap.release()
         cv2.destroyAllWindows()
